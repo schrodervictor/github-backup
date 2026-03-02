@@ -32,7 +32,7 @@ def _backup_single_issue(client: GitHubClient, n: int, issue: dict[str, Any]) ->
     rp = client.repo_path
     save_json(config.get("base_dir"), f"issues/{n}/issue.json", issue)
 
-    save_reactions(client, f"{rp}/issues/{n}", f"issues/{n}/reactions.json")
+    save_reactions(client, f"{rp}/issues/{n}", f"issues/{n}/reactions.json", parent=issue)
 
     comments = client.paginate(f"{rp}/issues/{n}/comments")
     save_json(config.get("base_dir"), f"issues/{n}/comments.json", comments)

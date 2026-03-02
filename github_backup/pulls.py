@@ -31,7 +31,7 @@ def _backup_single_pr(client: GitHubClient, n: int, pr: dict[str, Any]) -> None:
     save_json(config.get("base_dir"), f"pulls/{n}/pull.json", pr)
 
     _backup_diff(client, n)
-    save_reactions(client, f"{rp}/issues/{n}", f"pulls/{n}/reactions.json")
+    save_reactions(client, f"{rp}/issues/{n}", f"pulls/{n}/reactions.json", parent=pr)
     _backup_comments(client, n)
     _backup_reviews(client, n)
     _backup_review_comments(client, n)
@@ -74,6 +74,7 @@ def _backup_reviews(client: GitHubClient, n: int) -> None:
             client,
             f"{rp}/pulls/{n}/reviews/{rid}",
             f"pulls/{n}/reviews/{rid}/reactions.json",
+            parent=review,
         )
         rev_comments = client.paginate(
             f"{rp}/pulls/{n}/reviews/{rid}/comments"

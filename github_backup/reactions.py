@@ -15,8 +15,18 @@ def fetch_reactions(client: GitHubClient, endpoint: str) -> list[dict[str, Any]]
     )
 
 
-def save_reactions(client: GitHubClient, api_endpoint: str, save_path: str) -> None:
-    """Fetch reactions and save only if non-empty."""
+def save_reactions(
+    client: GitHubClient,
+    api_endpoint: str,
+    save_path: str,
+    parent: dict[str, Any],
+) -> None:
+    """Fetch reactions and save only if non-empty.
+
+    Skips the API call entirely when the parent object reports zero reactions.
+    """
+    if parent.get("reactions", {}).get("total_count", 0) == 0:
+        return
     reactions = fetch_reactions(client, api_endpoint)
     if reactions:
         save_json(config.get("base_dir"), save_path, reactions)
@@ -38,4 +48,5 @@ def save_comment_reactions(
             client,
             api_tpl.format(cid=cid),
             save_tpl.format(cid=cid),
+            parent=comment,
         )
