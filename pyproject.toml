@@ -8,4 +8,4 @@ dependencies = ["requests"]
 github-backup = "github_backup.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["github_backup"]
+include = ["github_backup", "github_backup.downloaders"]

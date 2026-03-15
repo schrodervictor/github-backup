@@ -14,7 +14,7 @@ remote.
 - `requests` library (`pip install requests`)
 - A GitHub [personal access token](https://github.com/settings/tokens) with
   `repo` scope (and `read:project` for classic projects, `read:discussion` for
-  discussions)
+  discussions, `read:packages` for packages)
 - Must be run from within a git repository with a GitHub `origin` remote
 
 ## Usage
@@ -54,7 +54,15 @@ github_backup/
 ├── pulls.py             # PRs with diffs, comments, reviews, reactions
 ├── releases.py          # Releases with asset downloads
 ├── workflows.py         # Actions workflows and run history with logs
-└── discussions.py       # Discussions via GraphQL with comments and replies
+├── discussions.py       # Discussions via GraphQL with comments and replies
+├── packages.py          # Packages backup orchestration (metadata and versions)
+└── downloaders/         # Package file downloaders (one per registry type)
+    ├── __init__.py      # Downloader registry and @downloader decorator
+    ├── container.py     # Container/Docker images via GHCR OCI API
+    ├── npm.py           # npm tarballs
+    ├── maven.py         # Maven JARs
+    ├── nuget.py         # NuGet .nupkg files
+    └── rubygems.py      # RubyGems .gem files
 ```
 
 Each module exports a single `backup(client)` function. To add a new resource
@@ -75,6 +83,7 @@ type, create a new module and add it to `STEP_REGISTRY` in `__main__.py`.
 | Classic projects    | REST API | Project boards (v1)                                                                                             |
 | Commit comments     | REST API | Comments made directly on commits                                                                               |
 | Discussions         | GraphQL  | All discussions with fully paginated comments and nested replies                                                |
+| Packages            | REST API | All packages (container, npm, maven, nuget, rubygems) with version metadata and downloaded package files        |
 
 ## Output Directory Structure
 
@@ -129,14 +138,31 @@ type, create a new module and add it to `STEP_REGISTRY` in `__main__.py`.
 │   └── <number>/
 │       └── discussion.json              # Discussion with comments and nested replies
 │
-└── actions/
-    ├── workflows.json                   # GitHub Actions workflow definitions
-    └── runs/
-        ├── index.json                   # All workflow runs (summary list)
-        └── <run_id>/
-            ├── run.json                 # Run detail (status, conclusion, timing, etc.)
-            ├── jobs.json                # Jobs within the run (steps, outcomes)
-            └── logs.zip                 # Full run logs (if not expired)
+├── actions/
+│   ├── workflows.json                   # GitHub Actions workflow definitions
+│   └── runs/
+│       ├── index.json                   # All workflow runs (summary list)
+│       └── <run_id>/
+│           ├── run.json                 # Run detail (status, conclusion, timing, etc.)
+│           ├── jobs.json                # Jobs within the run (steps, outcomes)
+│           └── logs.zip                 # Full run logs (if not expired)
+│
+└── packages/
+    ├── index.json                       # All packages linked to this repo
+    └── <package_type>/<package_name>/
+        ├── package.json                 # Package metadata
+        ├── versions.json                # All versions (summary list)
+        └── <version>/
+            ├── version.json             # Version metadata
+            ├── manifest.json            # (container) OCI image manifest
+            ├── blobs/                   # (container) Config and layer blobs
+            │   └── sha256_<digest>
+            ├── platforms/               # (container) Per-platform manifests and blobs
+            │   └── <os>_<arch>/
+            ├── <name>-<version>.tgz     # (npm) Package tarball
+            ├── <artifact>-<version>.jar # (maven) JAR file
+            ├── <name>.<version>.nupkg   # (nuget) NuGet package
+            └── <name>-<version>.gem     # (rubygems) Gem file
 ```
 
 ## Incremental Backups
@@ -152,6 +178,8 @@ in `last_backup.json` inside the output directory.
 - **Discussions**: Ordered by `UPDATED_AT DESC` in GraphQL; pagination stops
   once all recent discussions have been collected.
 - **Releases**: Filtered client-side by `published_at` / `created_at`.
+- **Packages**: All versions are fetched and filtered client-side by
+  `updated_at` / `created_at`. Only new or updated versions are downloaded.
 - **Simple resources** (labels, milestones, projects, etc.): Always fetched in
   full — they are cheap and don't support incremental queries.
 

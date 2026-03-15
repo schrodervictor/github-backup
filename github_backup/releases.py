@@ -20,7 +20,7 @@ def backup(client: GitHubClient) -> None:
         # Filter to only releases created or updated since the last backup
         releases = [
             r for r in releases
-            if r.get("published_at", r.get("created_at", "")) >= since
+            if (r.get("published_at") or r.get("created_at") or since) >= since
         ]
         logger.info(f"  {len(releases)} new/updated since {since}")
         merge_json_list(config.get("base_dir"), "releases/index.json", releases)

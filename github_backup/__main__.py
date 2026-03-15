@@ -32,7 +32,7 @@ from types import ModuleType
 
 from . import config
 from .client import GitHubClient
-from . import simple, issues, pulls, releases, workflows, discussions
+from . import simple, issues, pulls, releases, workflows, discussions, packages
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ STEP_REGISTRY: dict[str, ModuleType] = {
     "releases": releases,
     "workflows": workflows,
     "discussions": discussions,
+    "packages": packages,
 }
 
 STEP_NAMES = list(STEP_REGISTRY.keys())

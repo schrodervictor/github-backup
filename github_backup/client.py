@@ -18,6 +18,7 @@ class GitHubClient:
     def __init__(self, owner: str, repo: str, token: str) -> None:
         self.owner = owner
         self.repo = repo
+        self.token = token
         self.repo_path = f"/repos/{owner}/{repo}"
         self.session = requests.Session()
         self.session.headers.update(
