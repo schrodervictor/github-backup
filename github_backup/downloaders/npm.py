@@ -5,7 +5,7 @@ from typing import Any
 
 from .. import config
 from ..client import GitHubClient
-from ..utils import save_binary
+from ..utils import save_binary, save_json
 from . import downloader
 
 logger = logging.getLogger(__name__)
@@ -24,10 +24,29 @@ def download(
     """Download an npm package tarball from GitHub Packages npm registry."""
     auth_headers = {"Authorization": f"Bearer {client.token}"}
 
-    # GitHub npm packages are always scoped under @owner
-    tarball_url = (
-        f"{REGISTRY_URL}/@{client.owner}/{pkg_name}/-/{pkg_name}-{version_name}.tgz"
-    )
+    # Fetch package metadata from the registry to get the real tarball URL
+    metadata_url = f"{REGISTRY_URL}/@{client.owner}/{pkg_name}"
+    logger.info("    Fetching npm metadata: @%s/%s", client.owner, pkg_name)
+    meta_resp = client.get(metadata_url, headers=auth_headers)
+    if meta_resp.status_code != 200:
+        logger.warning(
+            "    Failed to fetch npm metadata (%d)", meta_resp.status_code
+        )
+        return
+
+    metadata = meta_resp.json()
+    save_json(config.get("base_dir"), f"{version_dir}/metadata.json", metadata)
+
+    version_meta = metadata.get("versions", {}).get(version_name)
+    if not version_meta:
+        logger.warning("    Version %s not found in registry metadata", version_name)
+        return
+
+    tarball_url = version_meta.get("dist", {}).get("tarball")
+    if not tarball_url:
+        logger.warning("    No tarball URL in registry metadata for %s", version_name)
+        return
+
     logger.info("    Downloading npm tarball: %s@%s", pkg_name, version_name)
     resp = client.get(tarball_url, stream=True, headers=auth_headers)
     if resp.status_code == 200:

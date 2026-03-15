@@ -58,11 +58,11 @@ github_backup/
 ├── packages.py          # Packages backup orchestration (metadata and versions)
 └── downloaders/         # Package file downloaders (one per registry type)
     ├── __init__.py      # Downloader registry and @downloader decorator
-    ├── container.py     # Container/Docker images via GHCR OCI API
-    ├── npm.py           # npm tarballs
-    ├── maven.py         # Maven JARs
-    ├── nuget.py         # NuGet .nupkg files
-    └── rubygems.py      # RubyGems .gem files
+    ├── container.py     # Container/Docker images via GHCR OCI distribution API
+    ├── npm.py           # npm packages via npm registry API (metadata + tarball)
+    ├── maven.py         # Maven artifacts via Maven registry (POM + artifact)
+    ├── nuget.py         # NuGet packages via NuGet V3 API (service index + .nupkg)
+    └── rubygems.py      # RubyGems via Bundler API (metadata + .gem)
 ```
 
 Each module exports a single `backup(client)` function. To add a new resource
@@ -83,7 +83,7 @@ type, create a new module and add it to `STEP_REGISTRY` in `__main__.py`.
 | Classic projects    | REST API | Project boards (v1)                                                                                             |
 | Commit comments     | REST API | Comments made directly on commits                                                                               |
 | Discussions         | GraphQL  | All discussions with fully paginated comments and nested replies                                                |
-| Packages            | REST API | All packages (container, npm, maven, nuget, rubygems) with version metadata and downloaded package files        |
+| Packages            | REST API + registry APIs | All packages (container, npm, maven, nuget, rubygems) with version metadata, registry metadata, and downloaded package files |
 
 ## Output Directory Structure
 
@@ -149,20 +149,48 @@ type, create a new module and add it to `STEP_REGISTRY` in `__main__.py`.
 │
 └── packages/
     ├── index.json                       # All packages linked to this repo
-    └── <package_type>/<package_name>/
-        ├── package.json                 # Package metadata
-        ├── versions.json                # All versions (summary list)
+    │
+    ├── container/<package_name>/        # Container/Docker (via GHCR OCI API)
+    │   ├── package.json                 # Package metadata
+    │   ├── versions.json                # All versions (summary list)
+    │   └── <version>/
+    │       ├── version.json             # Version metadata (from GitHub API)
+    │       ├── manifest.json            # OCI image manifest
+    │       ├── blobs/                   # Config and layer blobs
+    │       │   └── sha256_<digest>
+    │       └── platforms/               # Per-platform manifests and blobs (multi-arch)
+    │           └── <os>_<arch>/
+    │
+    ├── npm/<package_name>/              # npm (via npm registry API)
+    │   ├── package.json
+    │   ├── versions.json
+    │   └── <version>/
+    │       ├── version.json
+    │       ├── metadata.json            # Full registry metadata (dependencies, checksums, etc.)
+    │       └── <name>-<version>.tgz     # Package tarball
+    │
+    ├── maven/<package_name>/            # Maven (via Maven registry)
+    │   ├── package.json
+    │   ├── versions.json
+    │   └── <version>/
+    │       ├── version.json
+    │       ├── <artifact>-<version>.pom # POM file (coordinates, dependencies, packaging type)
+    │       └── <artifact>-<version>.jar # Artifact file (jar, war, aar, etc.)
+    │
+    ├── nuget/<package_name>/            # NuGet (via NuGet V3 API)
+    │   ├── package.json
+    │   ├── versions.json
+    │   └── <version>/
+    │       ├── version.json
+    │       └── <name>.<version>.nupkg   # NuGet package
+    │
+    └── rubygems/<package_name>/         # RubyGems (via Bundler API)
+        ├── package.json
+        ├── versions.json
         └── <version>/
-            ├── version.json             # Version metadata
-            ├── manifest.json            # (container) OCI image manifest
-            ├── blobs/                   # (container) Config and layer blobs
-            │   └── sha256_<digest>
-            ├── platforms/               # (container) Per-platform manifests and blobs
-            │   └── <os>_<arch>/
-            ├── <name>-<version>.tgz     # (npm) Package tarball
-            ├── <artifact>-<version>.jar # (maven) JAR file
-            ├── <name>.<version>.nupkg   # (nuget) NuGet package
-            └── <name>-<version>.gem     # (rubygems) Gem file
+            ├── version.json
+            ├── metadata.json            # Gem metadata (from /api/v1/gems)
+            └── <name>-<version>.gem     # Gem file
 ```
 
 ## Incremental Backups
