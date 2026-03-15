@@ -5,7 +5,7 @@ from typing import Any
 
 from . import config
 from .client import API_BASE, PER_PAGE, GitHubClient
-from .utils import save_binary, save_json
+from .utils import merge_json_list, save_binary, save_json
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,21 @@ def _backup_workflow_definitions(client: GitHubClient) -> None:
 
 
 def _backup_workflow_runs(client: GitHubClient) -> None:
-    logger.info("Fetching Actions workflow runs...")
+    since = config.get("since")
+    logger.info("Fetching Actions workflow runs%s...", f" (since {since})" if since else "")
     all_runs: list[dict[str, Any]] = []
     page = 1
 
+    params: dict[str, Any] = {"per_page": PER_PAGE, "page": page}
+    if since:
+        # The runs endpoint supports `created` filter with range syntax
+        params["created"] = f">={since}"
+
     while True:
+        params["page"] = page
         resp = client.get(
             f"{API_BASE}{client.repo_path}/actions/runs",
-            params={"per_page": PER_PAGE, "page": page},
+            params=params,
         )
         if resp.status_code == 404:
             logger.warning("404 — Actions not enabled, skipping")
@@ -50,7 +57,10 @@ def _backup_workflow_runs(client: GitHubClient) -> None:
         page += 1
 
     logger.info(f"  {len(all_runs)} workflow runs")
-    save_json(config.get("base_dir"), "actions/runs/index.json", all_runs)
+    if since:
+        merge_json_list(config.get("base_dir"), "actions/runs/index.json", all_runs)
+    else:
+        save_json(config.get("base_dir"), "actions/runs/index.json", all_runs)
 
     for run in all_runs:
         _backup_single_run(client, run)

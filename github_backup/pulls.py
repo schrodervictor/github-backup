@@ -6,19 +6,42 @@ from typing import Any
 from . import config
 from .client import API_BASE, GitHubClient
 from .reactions import save_comment_reactions, save_reactions
-from .utils import save_json, save_text
+from .utils import merge_json_list, save_json, save_text
 
 logger = logging.getLogger(__name__)
 
 
 def backup(client: GitHubClient) -> None:
-    logger.info("Fetching pull requests...")
-    pulls = client.paginate(
-        f"{client.repo_path}/pulls",
-        params={"state": "all", "direction": "asc"},
-    )
-    logger.info(f"  {len(pulls)} pull requests")
-    save_json(config.get("base_dir"), "pulls/index.json", pulls)
+    since = config.get("since")
+    logger.info("Fetching pull requests%s...", f" (since {since})" if since else "")
+
+    if since:
+        # The pulls endpoint doesn't support `since`, but the issues endpoint
+        # (which includes PRs) does.  Fetch updated issues, keep only PRs.
+        params: dict[str, str] = {"state": "all", "direction": "asc", "since": since}
+        items = client.paginate(
+            f"{client.repo_path}/issues",
+            params=params,
+        )
+        pr_numbers = [i["number"] for i in items if "pull_request" in i]
+        logger.info(f"  {len(pr_numbers)} pull requests updated since {since}")
+        # Fetch full PR objects for each updated number
+        pulls = []
+        for n in pr_numbers:
+            resp = client.get(f"{API_BASE}{client.repo_path}/pulls/{n}")
+            if resp.status_code == 200:
+                pulls.append(resp.json())
+    else:
+        pulls = client.paginate(
+            f"{client.repo_path}/pulls",
+            params={"state": "all", "direction": "asc"},
+        )
+        logger.info(f"  {len(pulls)} pull requests")
+
+    if since:
+        merge_json_list(config.get("base_dir"), "pulls/index.json", pulls)
+    else:
+        save_json(config.get("base_dir"), "pulls/index.json", pulls)
 
     for pr in pulls:
         n = pr["number"]

@@ -7,9 +7,15 @@ directory of the current repository.
 
 Usage:
     python -m github_backup [--token TOKEN] [--output-dir DIR]
+                            [--incremental] [--since TIMESTAMP]
+                            [--include STEP] [--exclude STEP]
 
 Run from within a git repository with a GitHub origin remote.
 The token can also be set via the GITHUB_TOKEN environment variable.
+
+Use --incremental to only fetch data updated since the last backup
+(timestamp is read from last_backup.json in the output directory).
+Use --since with an ISO 8601 timestamp to specify the cutoff explicitly.
 
 Requires Python 3.10+.
 """
@@ -97,6 +103,18 @@ def main() -> None:
         help="Output directory (default: .github)",
     )
     parser.add_argument(
+        "--incremental",
+        action="store_true",
+        default=False,
+        help="Only fetch data updated since the last backup (reads timestamp from last_backup.json)",
+    )
+    parser.add_argument(
+        "--since",
+        default=None,
+        metavar="TIMESTAMP",
+        help="Only fetch data updated since this ISO 8601 timestamp (e.g. 2024-01-15T00:00:00Z). Overrides --incremental.",
+    )
+    parser.add_argument(
         "--include",
         action=_StepFilter,
         dest="include",
@@ -120,7 +138,19 @@ def main() -> None:
         stream=os.sys.stderr,
     )
 
-    config.init(args.output_dir)
+    since = args.since
+    if not since and args.incremental:
+        since = config.read_last_backup_timestamp(args.output_dir)
+        if not since:
+            logger.warning(
+                "No previous backup timestamp found in %s — running full backup",
+                args.output_dir,
+            )
+
+    config.init(args.output_dir, since=since)
+
+    if since:
+        logger.info("Incremental mode: fetching data updated since %s", since)
 
     if not args.token:
         parser.error(
@@ -139,6 +169,7 @@ def main() -> None:
     for step in steps:
         step.backup(client)
 
+    config.write_last_backup_timestamp(base_dir)
     logger.info("Backup complete → %s", base_dir)
 
 

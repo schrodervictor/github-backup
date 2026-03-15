@@ -10,7 +10,7 @@ remote.
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.10+
 - `requests` library (`pip install requests`)
 - A GitHub [personal access token](https://github.com/settings/tokens) with
   `repo` scope (and `read:project` for classic projects, `read:discussion` for
@@ -32,6 +32,12 @@ python -m github_backup --token ghp_...
 
 # Custom output directory (default: .github)
 python -m github_backup --output-dir /path/to/output
+
+# Incremental backup (only fetch data updated since last run)
+python -m github_backup --incremental
+
+# Incremental backup with an explicit cutoff timestamp
+python -m github_backup --since 2024-06-01T00:00:00Z
 ```
 
 ## Project Structure
@@ -52,7 +58,7 @@ github_backup/
 ```
 
 Each module exports a single `backup(client)` function. To add a new resource
-type, create a new module and add it to `BACKUP_STEPS` in `__main__.py`.
+type, create a new module and add it to `STEP_REGISTRY` in `__main__.py`.
 
 ## What Gets Backed Up
 
@@ -75,6 +81,7 @@ type, create a new module and add it to `BACKUP_STEPS` in `__main__.py`.
 ```
 .github/
 │
+├── last_backup.json                     # Timestamp of last successful backup (for --incremental)
 ├── metadata.json                        # Repository metadata
 ├── labels.json                          # All labels
 ├── milestones.json                      # All milestones (open and closed)
@@ -131,6 +138,26 @@ type, create a new module and add it to `BACKUP_STEPS` in `__main__.py`.
             ├── jobs.json                # Jobs within the run (steps, outcomes)
             └── logs.zip                 # Full run logs (if not expired)
 ```
+
+## Incremental Backups
+
+By default the tool performs a full backup. Use `--incremental` to only fetch
+data that changed since the last successful run. The cutoff timestamp is stored
+in `last_backup.json` inside the output directory.
+
+- **Issues & Pull requests**: The GitHub `/issues?since=` parameter returns
+  items whose `updated_at` is newer than the cutoff. Each matched item is then
+  fully re-backed-up (all comments, reviews, events, etc.).
+- **Workflow runs**: Filtered server-side via `created>=TIMESTAMP`.
+- **Discussions**: Ordered by `UPDATED_AT DESC` in GraphQL; pagination stops
+  once all recent discussions have been collected.
+- **Releases**: Filtered client-side by `published_at` / `created_at`.
+- **Simple resources** (labels, milestones, projects, etc.): Always fetched in
+  full — they are cheap and don't support incremental queries.
+
+Index files (e.g. `issues/index.json`) are **merged** during incremental runs:
+updated entries replace their older versions while previously backed-up entries
+are preserved.
 
 ## Resilience
 

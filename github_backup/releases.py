@@ -5,16 +5,27 @@ from typing import Any
 
 from . import config
 from .client import GitHubClient
-from .utils import save_binary, save_json
+from .utils import merge_json_list, save_binary, save_json
 
 logger = logging.getLogger(__name__)
 
 
 def backup(client: GitHubClient) -> None:
-    logger.info("Fetching releases...")
+    since = config.get("since")
+    logger.info("Fetching releases%s...", f" (since {since})" if since else "")
     releases = client.paginate(f"{client.repo_path}/releases")
     logger.info(f"  {len(releases)} releases")
-    save_json(config.get("base_dir"), "releases/index.json", releases)
+
+    if since:
+        # Filter to only releases created or updated since the last backup
+        releases = [
+            r for r in releases
+            if r.get("published_at", r.get("created_at", "")) >= since
+        ]
+        logger.info(f"  {len(releases)} new/updated since {since}")
+        merge_json_list(config.get("base_dir"), "releases/index.json", releases)
+    else:
+        save_json(config.get("base_dir"), "releases/index.json", releases)
 
     for release in releases:
         tag = release.get("tag_name", str(release["id"]))

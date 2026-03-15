@@ -5,14 +5,15 @@ from typing import Any
 
 from . import config
 from .client import GitHubClient
-from .utils import save_json
+from .utils import merge_json_list, save_json
 
 logger = logging.getLogger(__name__)
 
 
 def backup(client: GitHubClient) -> None:
-    logger.info("Fetching discussions (GraphQL)...")
-    discussions = _fetch_all_discussions(client)
+    since = config.get("since")
+    logger.info("Fetching discussions (GraphQL)%s...", f" (since {since})" if since else "")
+    discussions = _fetch_all_discussions(client, since=since)
     logger.info(f"  {len(discussions)} discussions")
 
     for disc in discussions:
@@ -21,10 +22,15 @@ def backup(client: GitHubClient) -> None:
         disc["comments"] = _fetch_comments(client, disc["id"])
         save_json(config.get("base_dir"), f"discussions/{n}/discussion.json", disc)
 
-    save_json(config.get("base_dir"), "discussions/index.json", discussions)
+    if since:
+        merge_json_list(config.get("base_dir"), "discussions/index.json", discussions)
+    else:
+        save_json(config.get("base_dir"), "discussions/index.json", discussions)
 
 
-def _fetch_all_discussions(client: GitHubClient) -> list[dict[str, Any]]:
+def _fetch_all_discussions(
+    client: GitHubClient, since: str | None = None,
+) -> list[dict[str, Any]]:
     discussions: list[dict[str, Any]] = []
     cursor: str | None = None
 
@@ -33,7 +39,7 @@ def _fetch_all_discussions(client: GitHubClient) -> list[dict[str, Any]]:
             """
             query($owner: String!, $repo: String!, $after: String) {
               repository(owner: $owner, name: $repo) {
-                discussions(first: 50, after: $after) {
+                discussions(first: 50, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
                   pageInfo { hasNextPage endCursor }
                   nodes {
                     id
@@ -55,7 +61,19 @@ def _fetch_all_discussions(client: GitHubClient) -> list[dict[str, Any]]:
         if not data:
             break
         disc_data = data["repository"]["discussions"]
-        discussions.extend(disc_data["nodes"])
+        page_nodes = disc_data["nodes"]
+
+        if since:
+            # Ordered by UPDATED_AT DESC, so once we see a discussion older
+            # than `since`, all remaining ones are also older — stop early.
+            for node in page_nodes:
+                if node["updatedAt"] >= since:
+                    discussions.append(node)
+                else:
+                    return discussions
+        else:
+            discussions.extend(page_nodes)
+
         if disc_data["pageInfo"]["hasNextPage"]:
             cursor = disc_data["pageInfo"]["endCursor"]
         else:
